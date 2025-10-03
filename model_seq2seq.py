@@ -14,20 +14,20 @@ import random
 from scipy.special import expit
 
 
-device = torch.device('cpu')
-print(f"Using device: {device}")
+device_ = torch.device('cpu')
+print(f"Using device: {device_}")
 
 
 #DATA PREPROCESSING
 
 def preprocessing_data(data_dir='data'):
     """Build vocabulary from training data"""
-    filepath = os.path.join(data_dir, 'training_label.json')
-    with open(filepath, 'r') as f:
-        file = json.load(f)
+    file_path = os.path.join(data_dir, 'training_label.json')
+    with open(file_path, 'r') as f:
+        file_ = json.load(f)
 
     word_count_dict = {}
-    for i in file:
+    for i in file_:
         for j in i['caption']:
             word_list = re.sub('[.!,;?]', ' ', j).split()
             for w in word_list:
@@ -38,26 +38,26 @@ def preprocessing_data(data_dir='data'):
     w_dict = {word: count for word, count in word_count_dict.items() if count > 3}
     
     # Special tokens
-    tokens = [('<PAD>', 0), ('<SOS>', 1), ('<EOS>', 2), ('<UNK>', 3)]
+    tokens_ = [('<PAD>', 0), ('<SOS>', 1), ('<EOS>', 2), ('<UNK>', 3)]
     
-    indextoword = {i + len(tokens): w for i, w in enumerate(w_dict)}
-    wordtoindex = {w: i + len(tokens) for i, w in enumerate(w_dict)}
+    index_to_word = {i + len(tokens_): w for i, w in enumerate(w_dict)}
+    word_to_index = {w: i + len(tokens_) for i, w in enumerate(w_dict)}
     
     for t, i in tokens:
-        indextoword[i] = t
-        wordtoindex[t] = i
+        index_to_word[i] = t
+        word_to_index[t] = i
 
-    print(f"Vocabulary size: {len(indextoword)}")
-    return indextoword, wordtoindex, w_dict
+    print(f"Vocabulary size: {len(index_to_word)}")
+    return index_to_word, word_to_index, w_dict
 
 
-def s_split(sentence, w_dict, wordtoindex):
+def s_split(sentence, w_dict, word_to_index):
     """Convert sentence to indices"""
-    sentence = re.sub(r'[.!,;?]', ' ', sentence).lower().split()
+    sentence_ = re.sub(r'[.!,;?]', ' ', sentence_).lower().split()
     indices = []
-    for word in sentence:
+    for word in sentence_:
         if word in w_dict:
-            indices.append(wordtoindex[word])
+            indices.append(word_to_index[word])
         else:
             indices.append(3)  # <UNK>
     indices.insert(0, 1)  # <SOS>
@@ -65,7 +65,7 @@ def s_split(sentence, w_dict, wordtoindex):
     return indices
 
 
-def annotate(label_file, w_dict, wordtoindex, data_dir='data'):
+def annotate(label_file, w_dict, word_to_index, data_dir='data'):
     """Create (video_id, caption_indices) pairs"""
     label_json = os.path.join(data_dir, label_file)
     annotated_caption = []
@@ -73,7 +73,7 @@ def annotate(label_file, w_dict, wordtoindex, data_dir='data'):
         label = json.load(f)
     for d in label:
         for s in d['caption']:
-            s = s_split(s, w_dict, wordtoindex)
+            s = s_split(s, w_dict, word_to_index)
             annotated_caption.append((d['id'], s))
     return annotated_caption
 
@@ -93,10 +93,10 @@ def avi(feat_dir, data_dir='data'):
     return avi_data
 
 
-def batch(data):
+def batch(data_):
     """Custom collate function for DataLoader"""
-    data.sort(key=lambda x: len(x[1]), reverse=True)
-    avi_data, captions = zip(*data)
+    data_.sort(key=lambda x: len(x[1]), reverse=True)
+    avi_data, captions = zip(*data_)
     avi_data = torch.stack(avi_data, 0)
 
     lengths = [len(cap) for cap in captions]
@@ -110,30 +110,30 @@ def batch(data):
 #DATASET CLASSES 
 
 class training_data(Dataset):
-    def __init__(self, label_file, feat_dir, w_dict, wordtoindex, data_dir='data'):
+    def __init__(self, label_file, feat_dir, w_dict, word_to_index, data_dir='data'):
         self.label_file = label_file
         self.feat_dir = feat_dir
         self.w_dict = w_dict
-        self.wordtoindex = wordtoindex
+        self.wordtoindex = word_to_index
         self.data_dir = data_dir
         
         # Load video features
         self.avi = avi(feat_dir, data_dir)
         
         # Create data pairs
-        self.data_pair = annotate(label_file, w_dict, wordtoindex, data_dir)
+        self.data_pair = annotate(label_file, w_dict, word_to_index, data_dir)
 
     def __len__(self):
         return len(self.data_pair)
 
     def __getitem__(self, idx):
-        avi_file_name, sentence = self.data_pair[idx]
-        data = torch.Tensor(self.avi[avi_file_name])
+        avi_file_name, sentence_ = self.data_pair[idx]
+        data_ = torch.Tensor(self.avi[avi_file_name])
         
         # Add small noise for regularization
-        data += torch.Tensor(data.size()).random_(0, 2000) / 10000.
+        data_ += torch.Tensor(data_.size()).random_(0, 2000) / 10000.
         
-        return data, torch.LongTensor(sentence)
+        return data_, torch.LongTensor(sentence_)
 
 
 class testing_dataset(Dataset):
@@ -312,19 +312,19 @@ def loss_cal(loss_fn, x, y, lengths):
     flag = True
 
     for batch in range(batch_size):
-        predict = x[batch]
+        pre = x[batch]
         ground_truth = y[batch]
         seq_len = lengths[batch] - 1
 
-        predict = predict[:seq_len]
+        pre = pre[:seq_len]
         ground_truth = ground_truth[:seq_len]
         
         if flag:
-            predict_cat = predict
+            predict_cat = pre
             groundT_cat = ground_truth
             flag = False
         else:
-            predict_cat = torch.cat((predict_cat, predict), dim=0)
+            predict_cat = torch.cat((predict_cat, pre), dim=0)
             groundT_cat = torch.cat((groundT_cat, ground_truth), dim=0)
 
     loss = loss_fn(predict_cat, groundT_cat)
@@ -386,17 +386,17 @@ def test(test_loader, model, indextoword):
                 video_id = id[i]
                 prediction = seq_predictions[i]
                 
-                sentence = []
+                sentence_ = []
                 for idx in prediction:
                     word = indextoword[idx.item()]
                     if word == '<EOS>':
                         break
                     if word not in ['<PAD>', '<SOS>', '<UNK>']:
-                        sentence.append(word)
+                        sentence_.append(word)
                     elif word == '<UNK>':
-                        sentence.append('something')
+                        sentence_.append('something')
                 
-                results.append((video_id, ' '.join(sentence)))
+                results.append((video_id, ' '.join(sentence_)))
                 
             if batch_idx % 10 == 0:
                 print(f'Processed {batch_idx}/{len(test_loader)} batches')
@@ -409,13 +409,13 @@ def main():
     print("="*60)
     print("Building vocabulary...")
     print("="*60)
-    indextoword, wordtoindex, w_dict = preprocessing_data('data')
+    index_to_word, word_to_index, w_dict = preprocessing_data('data')
     
     # Save vocabulary
     os.makedirs('SavedModel', exist_ok=True)
-    with open('SavedModel/indextoword.pickle', 'wb') as handle:
-        pickle.dump(indextoword, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    print("Vocabulary saved to SavedModel/indextoword.pickle")
+    with open('SavedModel/index_to_word.pickle', 'wb') as handle:
+        pickle.dump(index_to_word, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    print("Vocabulary saved to SavedModel/index_to_word.pickle")
     
     # Create dataset
     print("\n" + "="*60)
@@ -425,7 +425,7 @@ def main():
         label_file='training_label.json',
         feat_dir='training_data',
         w_dict=w_dict,
-        wordtoindex=wordtoindex,
+        word_to_index=word_to_index,
         data_dir='data'
     )
     
@@ -441,7 +441,7 @@ def main():
     print("\n" + "="*60)
     print("Initializing model...")
     print("="*60)
-    vocab_size = len(indextoword)
+    vocab_size = len(index_to_word)
     print(f"Vocabulary size: {vocab_size}")
     
     encoder = rnn_encoder()
