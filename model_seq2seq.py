@@ -12,485 +12,541 @@ import re
 import pickle
 import random
 from scipy.special import expit
+import time
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+device = torch.device('cpu')
+print(f"Using device: {device}")
 
 
-device_ = torch.device('cpu')
-print(f"Using device: {device_}")
+# DATA PREPROCESSING
 
-
-#DATA PREPROCESSING
-
-def preprocessing_data(data_dir='data'):
+def build_vocab(data_dir='data'):
     """Build vocabulary from training data"""
-    file_path = os.path.join(data_dir, 'training_label.json')
-    with open(file_path, 'r') as f:
-        file_ = json.load(f)
+    path = os.path.join(data_dir, 'training_label.json')
+    with open(path, 'r') as f:
+        data = json.load(f)
 
-    word_count_dict = {}
-    for i in file_:
-        for j in i['caption']:
-            word_list = re.sub('[.!,;?]', ' ', j).split()
-            for w in word_list:
+    word_freq = {}
+    for item in data:
+        for cap in item['caption']:
+            words = re.sub('[.!,;?]', ' ', cap).split()
+            for w in words:
                 w = w.lower()
-                word_count_dict[w] = word_count_dict.get(w, 0) + 1
+                word_freq[w] = word_freq.get(w, 0) + 1
 
-    # Filter by min_count > 3 (baseline requirement)
-    w_dict = {word: count for word, count in word_count_dict.items() if count > 3}
+    vocab = {w: c for w, c in word_freq.items() if c > 3}
     
-    # Special tokens
-    tokens_ = [('<PAD>', 0), ('<SOS>', 1), ('<EOS>', 2), ('<UNK>', 3)]
+    special = [('<PAD>', 0), ('<SOS>', 1), ('<EOS>', 2), ('<UNK>', 3)]
     
-    index_to_word = {i + len(tokens_): w for i, w in enumerate(w_dict)}
-    word_to_index = {w: i + len(tokens_) for i, w in enumerate(w_dict)}
+    i2w = {i + len(special): w for i, w in enumerate(vocab)}
+    w2i = {w: i + len(special) for i, w in enumerate(vocab)}
     
-    for t, i in tokens:
-        index_to_word[i] = t
-        word_to_index[t] = i
+    for tok, idx in special:
+        i2w[idx] = tok
+        w2i[tok] = idx
 
-    print(f"Vocabulary size: {len(index_to_word)}")
-    return index_to_word, word_to_index, w_dict
+    print(f"Vocabulary size: {len(i2w)}")
+    return i2w, w2i, vocab
 
 
-def s_split(sentence, w_dict, word_to_index):
+def sent_to_idx(sent, vocab, w2i):
     """Convert sentence to indices"""
-    sentence_ = re.sub(r'[.!,;?]', ' ', sentence_).lower().split()
-    indices = []
-    for word in sentence_:
-        if word in w_dict:
-            indices.append(word_to_index[word])
+    sent = re.sub(r'[.!,;?]', ' ', sent).lower().split()
+    ids = []
+    for w in sent:
+        if w in vocab:
+            ids.append(w2i[w])
         else:
-            indices.append(3)  # <UNK>
-    indices.insert(0, 1)  # <SOS>
-    indices.append(2)      # <EOS>
-    return indices
+            ids.append(3)
+    ids.insert(0, 1)
+    ids.append(2)
+    return ids
 
 
-def annotate(label_file, w_dict, word_to_index, data_dir='data'):
-    """Create (video_id, caption_indices) pairs"""
-    label_json = os.path.join(data_dir, label_file)
-    annotated_caption = []
-    with open(label_json, 'r') as f:
-        label = json.load(f)
-    for d in label:
-        for s in d['caption']:
-            s = s_split(s, w_dict, word_to_index)
-            annotated_caption.append((d['id'], s))
-    return annotated_caption
+def load_caps(label_file, vocab, w2i, data_dir='data'):
+    """Load captions"""
+    path = os.path.join(data_dir, label_file)
+    pairs = []
+    with open(path, 'r') as f:
+        data = json.load(f)
+    for item in data:
+        for cap in item['caption']:
+            ids = sent_to_idx(cap, vocab, w2i)
+            pairs.append((item['id'], ids))
+    return pairs
 
 
-def avi(feat_dir, data_dir='data'):
-    """Load all video features"""
-    avi_data = {}
-    training_feats = os.path.join(data_dir, feat_dir, 'feat')
-    files = os.listdir(training_feats)
+def load_feats(feat_dir, data_dir='data'):
+    """Load video features"""
+    feats = {}
+    path = os.path.join(data_dir, feat_dir, 'feat')
+    files = os.listdir(path)
     
-    for file in files:
-        if file.endswith('.npy'):
-            value = np.load(os.path.join(training_feats, file))
-            avi_data[file.split('.npy')[0]] = value
+    for f in files:
+        if f.endswith('.npy'):
+            vid = f.split('.npy')[0]
+            feat = np.load(os.path.join(path, f))
+            feats[vid] = feat
     
-    print(f"Loaded {len(avi_data)} video features")
-    return avi_data
+    print(f"Loaded {len(feats)} video features")
+    return feats
 
 
-def batch(data_):
-    """Custom collate function for DataLoader"""
-    data_.sort(key=lambda x: len(x[1]), reverse=True)
-    avi_data, captions = zip(*data_)
-    avi_data = torch.stack(avi_data, 0)
+def collate(batch):
+    """Collate batch"""
+    batch.sort(key=lambda x: len(x[1]), reverse=True)
+    vids, caps = zip(*batch)
+    vids = torch.stack(vids, 0)
 
-    lengths = [len(cap) for cap in captions]
-    targets = torch.zeros(len(captions), max(lengths)).long()
-    for i, cap in enumerate(captions):
-        end = lengths[i]
-        targets[i, :end] = cap[:end]
-    return avi_data, targets, lengths
+    lens = [len(c) for c in caps]
+    padded = torch.zeros(len(caps), max(lens)).long()
+    for i, c in enumerate(caps):
+        padded[i, :lens[i]] = c[:lens[i]]
+    return vids, padded, lens
 
 
-#DATASET CLASSES 
+# DATASET
 
-class training_data(Dataset):
-    def __init__(self, label_file, feat_dir, w_dict, word_to_index, data_dir='data'):
-        self.label_file = label_file
-        self.feat_dir = feat_dir
-        self.w_dict = w_dict
-        self.wordtoindex = word_to_index
-        self.data_dir = data_dir
-        
-        # Load video features
-        self.avi = avi(feat_dir, data_dir)
-        
-        # Create data pairs
-        self.data_pair = annotate(label_file, w_dict, word_to_index, data_dir)
+class TrainData(Dataset):
+    def __init__(self, label_file, feat_dir, vocab, w2i, data_dir='data'):
+        self.vocab = vocab
+        self.w2i = w2i
+        self.feats = load_feats(feat_dir, data_dir)
+        self.pairs = load_caps(label_file, vocab, w2i, data_dir)
 
     def __len__(self):
-        return len(self.data_pair)
+        return len(self.pairs)
 
     def __getitem__(self, idx):
-        avi_file_name, sentence_ = self.data_pair[idx]
-        data_ = torch.Tensor(self.avi[avi_file_name])
-        
-        # Add small noise for regularization
-        data_ += torch.Tensor(data_.size()).random_(0, 2000) / 10000.
-        
-        return data_, torch.LongTensor(sentence_)
+        vid, cap = self.pairs[idx]
+        feat = torch.Tensor(self.feats[vid])
+        feat += torch.Tensor(feat.size()).random_(0, 2000) / 10000.
+        return feat, torch.LongTensor(cap)
 
 
-class testing_dataset(Dataset):
-    def __init__(self, test_data_path):
-        self.avi = []
-        files = os.listdir(test_data_path)
-        for file in sorted(files):
-            if file.endswith('.npy'):
-                key = file.split('.npy')[0]
-                value = np.load(os.path.join(test_data_path, file))
-                self.avi.append([key, value])
+class TestData(Dataset):
+    def __init__(self, path):
+        self.data = []
+        files = os.listdir(path)
+        for f in sorted(files):
+            if f.endswith('.npy'):
+                vid = f.split('.npy')[0]
+                feat = np.load(os.path.join(path, f))
+                self.data.append([vid, feat])
 
     def __len__(self):
-        return len(self.avi)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        return self.avi[idx]
+        return self.data[idx]
 
 
-#MODEL COMPONENTS
+# MODEL
 
-class attention(nn.Module):
-    def __init__(self, hidden_size):
-        super(attention, self).__init__()
-        self.hidden_size = hidden_size
-        self.l1 = nn.Linear(2 * hidden_size, hidden_size)
-        self.l2 = nn.Linear(hidden_size, hidden_size)
-        self.l3 = nn.Linear(hidden_size, hidden_size)
-        self.l4 = nn.Linear(hidden_size, hidden_size)
-        self.w = nn.Linear(hidden_size, 1, bias=False)
+class Attention(nn.Module):
+    def __init__(self, hidden):
+        super(Attention, self).__init__()
+        self.hidden = hidden
+        self.fc1 = nn.Linear(2 * hidden, hidden)
+        self.fc2 = nn.Linear(hidden, hidden)
+        self.fc3 = nn.Linear(hidden, hidden)
+        self.fc4 = nn.Linear(hidden, hidden)
+        self.score = nn.Linear(hidden, 1, bias=False)
 
-    def forward(self, hidden_state, encoder_outputs):
-        batch_size, seq_len, feat_n = encoder_outputs.size()
-        hidden_state = hidden_state.view(batch_size, 1, feat_n).repeat(1, seq_len, 1)
-        matching_inputs = torch.cat((encoder_outputs, hidden_state), 2).view(-1, 2 * self.hidden_size)
+    def forward(self, h, enc_out):
+        bs, seq, feat = enc_out.size()
+        h = h.view(bs, 1, feat).repeat(1, seq, 1)
+        combined = torch.cat((enc_out, h), 2).view(-1, 2 * self.hidden)
 
-        x = self.l1(matching_inputs)
-        x = self.l2(x)
-        x = self.l3(x)
-        x = self.l4(x)
-        attention_weights = self.w(x)
-        attention_weights = attention_weights.view(batch_size, seq_len)
-        attention_weights = F.softmax(attention_weights, dim=1)
-        context = torch.bmm(attention_weights.unsqueeze(1), encoder_outputs).squeeze(1)
+        x = self.fc1(combined)
+        x = self.fc2(x)
+        x = self.fc3(x)
+        x = self.fc4(x)
+        attn = self.score(x)
+        attn = attn.view(bs, seq)
+        attn = F.softmax(attn, dim=1)
+        
+        ctx = torch.bmm(attn.unsqueeze(1), enc_out).squeeze(1)
+        return ctx
 
-        return context
 
-
-class rnn_encoder(nn.Module):
+class Encoder(nn.Module):
     def __init__(self):
-        super(rnn_encoder, self).__init__()
-        self.compress = nn.Linear(4096, 512)
-        self.dropout = nn.Dropout(0.3)
+        super(Encoder, self).__init__()
+        self.fc = nn.Linear(4096, 512)
+        self.drop = nn.Dropout(0.3)
         self.lstm = nn.LSTM(512, 512, batch_first=True)
 
-    def forward(self, input):
-        batch_size, seq_len, feat_n = input.size()
-        input = input.view(-1, feat_n)
-        input = self.compress(input)
-        input = self.dropout(input)
-        input = input.view(batch_size, seq_len, 512)
+    def forward(self, x):
+        bs, seq, feat = x.size()
+        x = x.view(-1, feat)
+        x = self.fc(x)
+        x = self.drop(x)
+        x = x.view(bs, seq, 512)
+        out, (h, c) = self.lstm(x)
+        return out, h
 
-        output, (hidden_state, cell_state) = self.lstm(input)
-        return output, hidden_state
 
-
-class rnn_decoder(nn.Module):
-    def __init__(self, hidden_size, output_size, vocab_size, word_dim, dropout_percentage=0.3):
-        super(rnn_decoder, self).__init__()
-        self.hidden_size = hidden_size
-        self.output_size = output_size
+class Decoder(nn.Module):
+    def __init__(self, hidden, vocab_size, word_dim, drop=0.3):
+        super(Decoder, self).__init__()
+        self.hidden = hidden
         self.vocab_size = vocab_size
         self.word_dim = word_dim
 
-        self.embedding = nn.Embedding(output_size, word_dim)
-        self.dropout = nn.Dropout(dropout_percentage)
-        self.lstm = nn.LSTM(hidden_size + word_dim, hidden_size, batch_first=True)
-        self.attention = attention(hidden_size)
-        self.output = nn.Linear(hidden_size, output_size)
+        self.embed = nn.Embedding(vocab_size, word_dim)
+        self.drop = nn.Dropout(drop)
+        self.lstm = nn.LSTM(hidden + word_dim, hidden, batch_first=True)
+        self.attn = Attention(hidden)
+        self.fc = nn.Linear(hidden, vocab_size)
 
-    def forward(self, encoder_last_hidden_state, encoder_output, targets=None, mode='train', tr_steps=None):
-        _, batch_size, _ = encoder_last_hidden_state.size()
-
-        decoder_current_hidden_state = encoder_last_hidden_state
-        decoder_c = torch.zeros(decoder_current_hidden_state.size()).to(device)
-        decoder_current_input_word = Variable(torch.ones(batch_size, 1)).long().to(device)
+    def forward(self, h, enc_out, tgt=None, mode='train', epoch=None):
+        _, bs, _ = h.size()
+        c = torch.zeros(h.size()).to(device)
+        word = Variable(torch.ones(bs, 1)).long().to(device)
         
-        seq_logProb = []
-        seq_predictions = []
+        preds = []
+        logits_list = []
 
-        targets = self.embedding(targets)
-        _, seq_len, _ = targets.size()
+        tgt = self.embed(tgt)
+        _, max_len, _ = tgt.size()
 
-        for i in range(seq_len - 1):
-            threshold = self.teacher_forcing_ratio(training_steps=tr_steps)
+        for i in range(max_len - 1):
+            thresh = self.teach_ratio(epoch)
             
-            if random.uniform(0.05, 0.995) > threshold:
-                current_input_word = targets[:, i]
+            if random.uniform(0.05, 0.995) > thresh:
+                inp = tgt[:, i]
             else:
-                current_input_word = self.embedding(decoder_current_input_word).squeeze(1)
+                inp = self.embed(word).squeeze(1)
 
-            context = self.attention(decoder_current_hidden_state, encoder_output)
-            lstm_input = torch.cat([current_input_word, context], dim=1).unsqueeze(1)
-            lstm_output, (decoder_current_hidden_state, decoder_c) = self.lstm(
-                lstm_input, (decoder_current_hidden_state, decoder_c)
-            )
+            ctx = self.attn(h, enc_out)
+            lstm_in = torch.cat([inp, ctx], dim=1).unsqueeze(1)
+            out, (h, c) = self.lstm(lstm_in, (h, c))
             
-            logprob = self.output(lstm_output.squeeze(1))
-            seq_logProb.append(logprob.unsqueeze(1))
-            decoder_current_input_word = logprob.unsqueeze(1).max(2)[1]
+            logits = self.fc(out.squeeze(1))
+            logits_list.append(logits.unsqueeze(1))
+            word = logits.unsqueeze(1).max(2)[1]
 
-        seq_logProb = torch.cat(seq_logProb, dim=1)
-        seq_predictions = seq_logProb.max(2)[1]
-        return seq_logProb, seq_predictions
+        logits_list = torch.cat(logits_list, dim=1)
+        preds = logits_list.max(2)[1]
+        return logits_list, preds
 
-    def infer(self, encoder_last_hidden_state, encoder_output):
-        _, batch_size, _ = encoder_last_hidden_state.size()
-        decoder_current_hidden_state = encoder_last_hidden_state
-        decoder_current_input_word = Variable(torch.ones(batch_size, 1)).long().to(device)
-        decoder_c = torch.zeros(decoder_current_hidden_state.size()).to(device)
+    def infer(self, h, enc_out):
+        _, bs, _ = h.size()
+        c = torch.zeros(h.size()).to(device)
+        word = Variable(torch.ones(bs, 1)).long().to(device)
         
-        seq_logProb = []
-        seq_predictions = []
-        assumption_seq_len = 28
+        preds = []
+        logits_list = []
+        max_len = 28
 
-        for i in range(assumption_seq_len - 1):
-            current_input_word = self.embedding(decoder_current_input_word).squeeze(1)
-            context = self.attention(decoder_current_hidden_state, encoder_output)
-            lstm_input = torch.cat([current_input_word, context], dim=1).unsqueeze(1)
-            lstm_output, (decoder_current_hidden_state, decoder_c) = self.lstm(
-                lstm_input, (decoder_current_hidden_state, decoder_c)
-            )
+        for i in range(max_len - 1):
+            inp = self.embed(word).squeeze(1)
+            ctx = self.attn(h, enc_out)
+            lstm_in = torch.cat([inp, ctx], dim=1).unsqueeze(1)
+            out, (h, c) = self.lstm(lstm_in, (h, c))
             
-            logprob = self.output(lstm_output.squeeze(1))
-            seq_logProb.append(logprob.unsqueeze(1))
-            decoder_current_input_word = logprob.unsqueeze(1).max(2)[1]
+            logits = self.fc(out.squeeze(1))
+            logits_list.append(logits.unsqueeze(1))
+            word = logits.unsqueeze(1).max(2)[1]
 
-        seq_logProb = torch.cat(seq_logProb, dim=1)
-        seq_predictions = seq_logProb.max(2)[1]
-        return seq_logProb, seq_predictions
+        logits_list = torch.cat(logits_list, dim=1)
+        preds = logits_list.max(2)[1]
+        return logits_list, preds
 
-    def teacher_forcing_ratio(self, training_steps):
-        return expit(training_steps / 20 + 0.85)
+    def teach_ratio(self, epoch):
+        return expit(epoch / 20 + 0.85)
 
 
-class MODELS(nn.Module):
-    def __init__(self, encoder, decoder):
-        super(MODELS, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
+class Model(nn.Module):
+    def __init__(self, enc, dec):
+        super(Model, self).__init__()
+        self.enc = enc
+        self.dec = dec
 
-    def forward(self, avi_feat, mode, target_sentences=None, tr_steps=None):
-        encoder_outputs, encoder_last_hidden_state = self.encoder(avi_feat)
+    def forward(self, vid, mode, tgt=None, epoch=None):
+        enc_out, h = self.enc(vid)
         if mode == 'train':
-            seq_logProb, seq_predictions = self.decoder(
-                encoder_last_hidden_state=encoder_last_hidden_state,
-                encoder_output=encoder_outputs,
-                targets=target_sentences, 
-                mode=mode, 
-                tr_steps=tr_steps
-            )
-        elif mode == 'inference':
-            seq_logProb, seq_predictions = self.decoder.infer(
-                encoder_last_hidden_state=encoder_last_hidden_state,
-                encoder_output=encoder_outputs
-            )
-        return seq_logProb, seq_predictions
-
-
-#TRAINING FUNCTIONS
-
-def loss_cal(loss_fn, x, y, lengths):
-    batch_size = len(x)
-    predict_cat = None
-    groundT_cat = None
-    flag = True
-
-    for batch in range(batch_size):
-        pre = x[batch]
-        ground_truth = y[batch]
-        seq_len = lengths[batch] - 1
-
-        pre = pre[:seq_len]
-        ground_truth = ground_truth[:seq_len]
-        
-        if flag:
-            predict_cat = pre
-            groundT_cat = ground_truth
-            flag = False
+            logits, preds = self.dec(h, enc_out, tgt, mode, epoch)
         else:
-            predict_cat = torch.cat((predict_cat, pre), dim=0)
-            groundT_cat = torch.cat((groundT_cat, ground_truth), dim=0)
+            logits, preds = self.dec.infer(h, enc_out)
+        return logits, preds
 
-    loss = loss_fn(predict_cat, groundT_cat)
-    avg_loss = loss / batch_size
 
+# TRAIN
+
+def calc_loss(criterion, pred, gt, lens):
+    bs = len(pred)
+    all_pred = []
+    all_gt = []
+
+    for i in range(bs):
+        p = pred[i]
+        g = gt[i]
+        l = lens[i] - 1
+        all_pred.append(p[:l])
+        all_gt.append(g[:l])
+    
+    all_pred = torch.cat(all_pred, dim=0)
+    all_gt = torch.cat(all_gt, dim=0)
+    
+    loss = criterion(all_pred, all_gt)
     return loss
 
 
-def train(model, epoch, loss_fn, optimizer, train_loader):
+def train_epoch(model, ep, criterion, opt, loader):
     model.train()
     print(f"\n{'='*60}")
-    print(f"Epoch {epoch}")
+    print(f"Epoch {ep + 1}")
     print(f"{'='*60}")
-    epoch_loss = 0
+    total = 0
 
-    for batch_idx, batch in enumerate(train_loader):
-        avi_feats, ground_truths, lengths = batch
-        avi_feats = avi_feats.to(device)
-        ground_truths = ground_truths.to(device)
+    for i, (vids, caps, lens) in enumerate(loader):
+        vids = vids.to(device)
+        caps = caps.to(device)
 
-        optimizer.zero_grad()
-        seq_logProb, seq_predictions = model(
-            avi_feats, 
-            target_sentences=ground_truths, 
-            mode='train', 
-            tr_steps=epoch
-        )
+        opt.zero_grad()
+        logits, preds = model(vids, mode='train', tgt=caps, epoch=ep)
         
-        ground_truths = ground_truths[:, 1:]  # Remove <SOS>
-        loss = loss_cal(loss_fn, seq_logProb, ground_truths, lengths)
+        caps = caps[:, 1:]
+        loss = calc_loss(criterion, logits, caps, lens)
         
         loss.backward()
-        optimizer.step()
+        opt.step()
+        total += loss.item()
         
-        epoch_loss += loss.item()
-        
-        if batch_idx % 5 == 0:
-            print(f'Batch {batch_idx:3d}/{len(train_loader)} | Loss: {loss.item():.4f}')
+        if i % 5 == 0:
+            print(f'Batch {i:3d}/{len(loader)} | Loss: {loss.item():.4f}')
 
-    avg_loss = epoch_loss / len(train_loader)
-    print(f"\nEpoch {epoch} Average Loss: {avg_loss:.4f}")
-    return avg_loss
+    avg = total / len(loader)
+    print(f"\nEpoch {ep + 1} Average Loss: {avg:.4f}")
+    return avg
 
 
-def test(test_loader, model, indextoword):
-    """Generate captions for test videos"""
+def get_samples(model, loader, i2w, ep, n=10):
+    model.eval()
+    samps = []
+    
+    with torch.no_grad():
+        for i, (vids, caps, lens) in enumerate(loader):
+            if i >= n:
+                break
+            vids = vids.to(device)
+            logits, preds = model(vids, mode='inference')
+            
+            gt = []
+            for idx in caps[0]:
+                w = i2w[idx.item()]
+                if w == '<EOS>':
+                    break
+                if w not in ['<PAD>', '<SOS>']:
+                    gt.append(w)
+            
+            pred = []
+            for idx in preds[0]:
+                w = i2w[idx.item()]
+                if w == '<EOS>':
+                    break
+                if w not in ['<PAD>', '<SOS>', '<UNK>']:
+                    pred.append(w)
+            
+            samps.append({'gt': ' '.join(gt), 'pred': ' '.join(pred)})
+    
+    model.train()
+    return samps
+
+
+def test(loader, model, i2w):
     model.eval()
     results = []
 
     with torch.no_grad():
-        for batch_idx, batch in enumerate(test_loader):
-            id, avi_feats = batch
-            avi_feats = torch.FloatTensor(avi_feats).to(device)
-
-            seq_logProb, seq_predictions = model(avi_feats, mode='inference')
+        for vids, feats in loader:
+            feats = torch.FloatTensor(feats).to(device)
+            logits, preds = model(feats, mode='inference')
             
-            # Convert predictions to words
-            for i in range(len(id)):
-                video_id = id[i]
-                prediction = seq_predictions[i]
+            for i in range(len(vids)):
+                vid = vids[i]
+                pred = preds[i]
                 
-                sentence_ = []
-                for idx in prediction:
-                    word = indextoword[idx.item()]
-                    if word == '<EOS>':
+                words = []
+                for idx in pred:
+                    w = i2w[idx.item()]
+                    if w == '<EOS>':
                         break
-                    if word not in ['<PAD>', '<SOS>', '<UNK>']:
-                        sentence_.append(word)
-                    elif word == '<UNK>':
-                        sentence_.append('something')
+                    if w not in ['<PAD>', '<SOS>', '<UNK>']:
+                        words.append(w)
+                    elif w == '<UNK>':
+                        words.append('something')
                 
-                results.append((video_id, ' '.join(sentence_)))
-                
-            if batch_idx % 10 == 0:
-                print(f'Processed {batch_idx}/{len(test_loader)} batches')
+                results.append((vid, ' '.join(words)))
 
     return results
 
 
+def plot_loss(losses, path='SavedModel/loss_plot.png'):
+    """Plot training loss curve"""
+    plt.figure(figsize=(10, 6))
+    plt.plot(range(1, len(losses) + 1), losses, 'b-', linewidth=2)
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Loss', fontsize=12)
+    plt.title('Training Loss', fontsize=14)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(path, dpi=300)
+    plt.close()
+    print(f"Loss plot saved: {path}")
+
+
+def plot_loss_vals(losses, path='SavedModel/loss_values.png'):
+    """Plot loss values"""
+    plt.figure(figsize=(12, 6))
+    epochs = range(1, len(losses) + 1)
+    plt.plot(epochs, losses, 'bo-', linewidth=2, markersize=8)
+    
+    for i, loss in enumerate(losses):
+        plt.text(i+1, loss, f'{loss:.3f}', ha='center', va='bottom', fontsize=9)
+    
+    plt.xlabel('Epoch', fontsize=12)
+    plt.ylabel('Loss', fontsize=12)
+    plt.title('Loss Values per Epoch', fontsize=14)
+    plt.grid(True, alpha=0.3)
+    plt.xticks(epochs)
+    plt.tight_layout()
+    plt.savefig(path, dpi=300)
+    plt.close()
+    print(f"Loss values plot saved: {path}")
+
+
+def save_data_info(vocab, i2w, path='SavedModel'):
+    """Save vocabulary and data info"""
+    with open(f'{path}/vocab_info.txt', 'w') as f:
+        f.write("="*60 + "\n")
+        f.write("DATA PREPARATION\n")
+        f.write("="*60 + "\n\n")
+        f.write(f"Vocabulary Size: {len(i2w)}\n")
+        f.write(f"Min Word Count: > 3\n\n")
+        f.write("Special Tokens:\n")
+        f.write("  <PAD>: 0 (padding)\n")
+        f.write("  <SOS>: 1 (start of sentence)\n")
+        f.write("  <EOS>: 2 (end of sentence)\n")
+        f.write("  <UNK>: 3 (unknown word)\n\n")
+        f.write("="*60 + "\n")
+        f.write("TOP 20 WORDS\n")
+        f.write("="*60 + "\n")
+        sorted_vocab = sorted(vocab.items(), key=lambda x: x[1], reverse=True)[:20]
+        for idx, (word, count) in enumerate(sorted_vocab, 1):
+            f.write(f"{idx:2d}. {word:15s} : {count:4d}\n")
+    print(f"Vocabulary info saved: {path}/vocab_info.txt")
+
+
 def main():
-    # Preprocessing
+    start = time.time()
+    
     print("="*60)
     print("Building vocabulary...")
     print("="*60)
-    index_to_word, word_to_index, w_dict = preprocessing_data('data')
+    i2w, w2i, vocab = build_vocab('data')
     
-    # Save vocabulary
     os.makedirs('SavedModel', exist_ok=True)
-    with open('SavedModel/index_to_word.pickle', 'wb') as handle:
-        pickle.dump(index_to_word, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    print("Vocabulary saved to SavedModel/index_to_word.pickle")
+    with open('SavedModel/i2w.pickle', 'wb') as f:
+        pickle.dump(i2w, f, protocol=pickle.HIGHEST_PROTOCOL)
     
-    # Create dataset
+    save_data_info(vocab, i2w)
+    
     print("\n" + "="*60)
-    print("Creating dataset...")
+    print("Loading data...")
     print("="*60)
-    train_dataset = training_data(
-        label_file='training_label.json',
-        feat_dir='training_data',
-        w_dict=w_dict,
-        word_to_index=word_to_index,
-        data_dir='data'
-    )
+    train_data = TrainData('training_label.json', 'training_data', vocab, w2i, 'data')
     
-    train_dataloader = DataLoader(
-        dataset=train_dataset,
-        batch_size=64,
-        shuffle=True,
-        num_workers=2,
-        collate_fn=batch
-    )
+    train_loader = DataLoader(train_data, batch_size=64, shuffle=True,
+                              num_workers=0, collate_fn=collate)
+    val_loader = DataLoader(train_data, batch_size=1, shuffle=False,
+                            num_workers=0, collate_fn=collate)
 
-    # Model
     print("\n" + "="*60)
     print("Initializing model...")
     print("="*60)
-    vocab_size = len(index_to_word)
+    vocab_size = len(i2w)
     print(f"Vocabulary size: {vocab_size}")
     
-    encoder = rnn_encoder()
-    decoder = rnn_decoder(512, vocab_size, vocab_size, 1024, 0.3)
-    model = MODELS(encoder=encoder, decoder=decoder)
+    enc = Encoder()
+    dec = Decoder(512, vocab_size, 1024, 0.3)
+    model = Model(enc, dec)
     model = model.to(device)
     
-    # Count parameters
     total_params = sum(p.numel() for p in model.parameters())
     print(f"Total parameters: {total_params:,}")
 
-    # Training setup
-    loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.0001)
+    criterion = nn.CrossEntropyLoss()
+    opt = optim.Adam(model.parameters(), lr=0.0001)
     
-    # Training
-    epochs_n = 20 
-    loss_arr = []
+    n_epochs = 20
+    losses = []
     
     print("\n" + "="*60)
     print("Starting Training")
-    print(f"Total Epochs: {epochs_n}")
+    print(f"Total Epochs: {n_epochs}")
     print(f"Batch Size: 64")
     print(f"Learning Rate: 0.0001")
     print("="*60)
     
-    for epoch in range(epochs_n):
-        loss = train(model, epoch + 1, loss_fn, optimizer, train_dataloader)
-        loss_arr.append(loss)
-        
-        # Save model every 20 epochs
-        if (epoch + 1) % 20 == 0:
-            torch.save(model.state_dict(), f"SavedModel/model_epoch_{epoch+1}.pth")
-            print(f"\n>>> Model saved at epoch {epoch+1}")
-
-    # Save final model
-    torch.save(model.state_dict(), "SavedModel/model_final.pth")
-    torch.save(model, "SavedModel/complete_model.pth")  # Save complete model
+    os.makedirs('outputs', exist_ok=True)
+    log = open('outputs/training_log.txt', 'w')
     
-    # Save loss history
+    for ep in range(n_epochs):
+        ep_start = time.time()
+        loss = train_epoch(model, ep, criterion, opt, train_loader)
+        losses.append(loss)
+        ep_time = time.time() - ep_start
+        
+        if ep in [0, 1, 4, 9, 19]:
+            print("\n" + "-"*60)
+            print("Output Caption:")
+            print("-"*60)
+            samps = get_samples(model, val_loader, i2w, ep)
+            for idx, s in enumerate(samps, 1):
+                print(f"{idx}. {s['pred']}")
+            
+            log.write(f"\n{'='*50}\n")
+            log.write(f"Epoch: {ep + 1}, Loss: {loss:.6f}, Time: {ep_time:.2f}s\n")
+            log.write(f"{'='*50}\n")
+            for idx, s in enumerate(samps):
+                log.write(f"Sample {idx+1}:\n")
+                log.write(f"GT:   {s['gt']}\n")
+                log.write(f"Pred: {s['pred']}\n\n")
+        
+        if (ep + 1) % 20 == 0:
+            torch.save(model.state_dict(), f"SavedModel/model_epoch_{ep+1}.pth")
+            print(f"\n>>> Model saved at epoch {ep+1}")
+
+    torch.save(model.state_dict(), "SavedModel/model_final.pth")
+    torch.save(model, "SavedModel/model_complete.pth")
+    
     with open('SavedModel/loss_values.txt', 'w') as f:
-        for item in loss_arr:
-            f.write(f"{item}\n")
+        for l in losses:
+            f.write(f"{l}\n")
+    
+    plot_loss(losses)
+    plot_loss_vals(losses)
+    
+    total = time.time() - start
     
     print("\n" + "="*60)
-    print("Training finished!")
-    print(f"Final loss: {loss_arr[-1]:.4f}")
+    print("TRAINING FINISHED!")
+    print("="*60)
+    print(f"Total time cost: {total:.2f} seconds ~ {total/3600:.2f} hours")
+    print(f"Final loss: {losses[-1]:.4f}")
     print(f"Models saved in SavedModel/")
     print("="*60)
+    
+    log.write(f"\n{'='*50}\n")
+    log.write(f"Total time cost: {total:.2f} seconds ~ {total/3600:.2f} hours\n")
+    log.write(f"{'='*50}\n")
+    log.close()
 
 
 if __name__ == "__main__":
