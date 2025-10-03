@@ -11,7 +11,7 @@ from model_seq2seq import (
     testing_dataset
 )
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device_ = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def test(test_loader, model, indextoword):
     model.eval()
@@ -31,17 +31,17 @@ def test(test_loader, model, indextoword):
                 video_id = id[i]
                 prediction = seq_predictions[i]
                 
-                sentence = []
+                sentence_ = []
                 for idx in prediction:
                     word = indextoword[idx.item()]
                     if word == '<EOS>':
                         break
                     if word not in ['<PAD>', '<SOS>', '<UNK>']:
-                        sentence.append(word)
+                        sentence_.append(word)
                     elif word == '<UNK>':
-                        sentence.append('something')
+                        sentence_.append('something')
                 
-                results.append((video_id, ' '.join(sentence)))
+                results.append((video_id, ' '.join(sentence_)))
                 
             if (batch_idx + 1) % 10 == 0:
                 print(f'Processed {batch_idx + 1}/{len(test_loader)} batches')
