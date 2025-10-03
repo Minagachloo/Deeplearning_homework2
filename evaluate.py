@@ -1,22 +1,20 @@
-
-# evaluate.py
 import sys
 import os
 
 # Add data directory to path to import bleu_eval
-sys.path.insert(0, 'MLDS_hw2_1_data')
+sys.path.insert(0, 'data')
 
 try:
     from bleu_eval import BLEU
 except ImportError:
-    print("Error: Could not import bleu_eval.py from MLDS_hw2_1_data/")
-    print("Make sure bleu_eval.py exists in MLDS_hw2_1_data/ directory")
+    print("Error: Could not import bleu_eval.py from data/")
+    print("Make sure bleu_eval.py exists in data/ directory")
     sys.exit(1)
 
 import json
 
 
-def evaluate(output_file, reference_file='MLDS_hw2_1_data/testing_label.json'):
+def evaluate(output_file, reference_file='data/testing_label.json'):
     """Evaluate BLEU scores for generated captions"""
     
     # Load generated captions
