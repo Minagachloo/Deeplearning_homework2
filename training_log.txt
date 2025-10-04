@@ -1,0 +1,224 @@
+
+==================================================
+Epoch: 1, Loss: 4.561820, Time: 2412.85s
+==================================================
+Sample 1:
+GT:   a woman goes under a horse
+Pred: a man is a a
+
+Sample 2:
+GT:   a woman crawls under a horse and gets a <UNK>
+Pred: a man is a a
+
+Sample 3:
+GT:   a girl is <UNK> out her head from between the back legs of a horse who <UNK> on her head
+Pred: a man is a a
+
+Sample 4:
+GT:   a horse <UNK> on a woman's head
+Pred: a man is a a
+
+Sample 5:
+GT:   a horse <UNK> on the head of a woman as she gets in between the fore <UNK> hind legs and sticks her head out
+Pred: a man is a a
+
+Sample 6:
+GT:   a horse is <UNK> on a woman's head
+Pred: a man is a a
+
+Sample 7:
+GT:   a horse <UNK> on a woman
+Pred: a man is a a
+
+Sample 8:
+GT:   a horse <UNK> on a woman
+Pred: a man is a a
+
+Sample 9:
+GT:   a lady was pooped on <UNK> she was under a <UNK> tail end
+Pred: a man is a a
+
+Sample 10:
+GT:   a woman crawls under a horse and when she sticks her head between the horses rear legs the horse <UNK> on her head
+Pred: a man is a a
+
+
+==================================================
+Epoch: 2, Loss: 4.065813, Time: 563.73s
+==================================================
+Sample 1:
+GT:   a woman goes under a horse
+Pred: a man is a a
+
+Sample 2:
+GT:   a woman crawls under a horse and gets a <UNK>
+Pred: a man is a a
+
+Sample 3:
+GT:   a girl is <UNK> out her head from between the back legs of a horse who <UNK> on her head
+Pred: a man is a a
+
+Sample 4:
+GT:   a horse <UNK> on a woman's head
+Pred: a man is a a
+
+Sample 5:
+GT:   a horse <UNK> on the head of a woman as she gets in between the fore <UNK> hind legs and sticks her head out
+Pred: a man is a a
+
+Sample 6:
+GT:   a horse is <UNK> on a woman's head
+Pred: a man is a a
+
+Sample 7:
+GT:   a horse <UNK> on a woman
+Pred: a man is a a
+
+Sample 8:
+GT:   a horse <UNK> on a woman
+Pred: a man is a a
+
+Sample 9:
+GT:   a lady was pooped on <UNK> she was under a <UNK> tail end
+Pred: a man is a a
+
+Sample 10:
+GT:   a woman crawls under a horse and when she sticks her head between the horses rear legs the horse <UNK> on her head
+Pred: a man is a a
+
+
+==================================================
+Epoch: 5, Loss: 3.548332, Time: 588.53s
+==================================================
+Sample 1:
+GT:   a woman goes under a horse
+Pred: a man is riding a horse
+
+Sample 2:
+GT:   a woman crawls under a horse and gets a <UNK>
+Pred: a man is riding a horse
+
+Sample 3:
+GT:   a girl is <UNK> out her head from between the back legs of a horse who <UNK> on her head
+Pred: a man is riding a horse
+
+Sample 4:
+GT:   a horse <UNK> on a woman's head
+Pred: a man is riding a horse
+
+Sample 5:
+GT:   a horse <UNK> on the head of a woman as she gets in between the fore <UNK> hind legs and sticks her head out
+Pred: a man is riding a horse
+
+Sample 6:
+GT:   a horse is <UNK> on a woman's head
+Pred: a man is riding a horse
+
+Sample 7:
+GT:   a horse <UNK> on a woman
+Pred: a man is riding a horse
+
+Sample 8:
+GT:   a horse <UNK> on a woman
+Pred: a man is riding a horse
+
+Sample 9:
+GT:   a lady was pooped on <UNK> she was under a <UNK> tail end
+Pred: a man is riding a horse
+
+Sample 10:
+GT:   a woman crawls under a horse and when she sticks her head between the horses rear legs the horse <UNK> on her head
+Pred: a man is riding a horse
+
+
+==================================================
+Epoch: 10, Loss: 2.972275, Time: 641.57s
+==================================================
+Sample 1:
+GT:   a woman goes under a horse
+Pred: a woman is riding a horse
+
+Sample 2:
+GT:   a woman crawls under a horse and gets a <UNK>
+Pred: a woman is riding a horse
+
+Sample 3:
+GT:   a girl is <UNK> out her head from between the back legs of a horse who <UNK> on her head
+Pred: a woman is riding a horse
+
+Sample 4:
+GT:   a horse <UNK> on a woman's head
+Pred: a woman is riding a horse
+
+Sample 5:
+GT:   a horse <UNK> on the head of a woman as she gets in between the fore <UNK> hind legs and sticks her head out
+Pred: a woman is riding a horse
+
+Sample 6:
+GT:   a horse is <UNK> on a woman's head
+Pred: a woman is riding a horse
+
+Sample 7:
+GT:   a horse <UNK> on a woman
+Pred: a woman is riding a horse
+
+Sample 8:
+GT:   a horse <UNK> on a woman
+Pred: a woman is riding a horse
+
+Sample 9:
+GT:   a lady was pooped on <UNK> she was under a <UNK> tail end
+Pred: a woman is riding a horse
+
+Sample 10:
+GT:   a woman crawls under a horse and when she sticks her head between the horses rear legs the horse <UNK> on her head
+Pred: a woman is riding a horse
+
+
+==================================================
+Epoch: 20, Loss: 2.421412, Time: 642.73s
+==================================================
+Sample 1:
+GT:   a woman goes under a horse
+Pred: a woman is on a horse
+
+Sample 2:
+GT:   a woman crawls under a horse and gets a <UNK>
+Pred: a woman is on a horse
+
+Sample 3:
+GT:   a girl is <UNK> out her head from between the back legs of a horse who <UNK> on her head
+Pred: a woman is on a horse
+
+Sample 4:
+GT:   a horse <UNK> on a woman's head
+Pred: a woman is on a horse
+
+Sample 5:
+GT:   a horse <UNK> on the head of a woman as she gets in between the fore <UNK> hind legs and sticks her head out
+Pred: a woman is on a horse
+
+Sample 6:
+GT:   a horse is <UNK> on a woman's head
+Pred: a woman is on a horse
+
+Sample 7:
+GT:   a horse <UNK> on a woman
+Pred: a woman is on a horse
+
+Sample 8:
+GT:   a horse <UNK> on a woman
+Pred: a woman is on a horse
+
+Sample 9:
+GT:   a lady was pooped on <UNK> she was under a <UNK> tail end
+Pred: a woman is on a horse
+
+Sample 10:
+GT:   a woman crawls under a horse and when she sticks her head between the horses rear legs the horse <UNK> on her head
+Pred: a woman is on a horse
+
+
+==================================================
+Total time cost: 17152.53 seconds ~ 4.76 hours
+==================================================
